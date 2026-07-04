@@ -1,0 +1,95 @@
+# CI workflow for podbox (Rust bin crate, edition 2024).
+#
+# Every job reuses the project's Nix devshell so CI runs the exact toolchain
+# pinned in rust-toolchain.toml and the ADR-0013 quality stack declared in
+# flake.nix (cargo-nextest, cargo-deny, cargo-audit, ...): each task runs as
+# `nix develop --command just <recipe>`, using the justfile recipe names from
+# the task runner (fmt / clippy / lint / test / build / deny).
+#
+# ADR-0013 mandates two CI gates, both wired below:
+#   1. exit-code matrix unit test (ADR-0005, exit codes 0-7) — exercised by the
+#      `test` job, which runs the full suite through cargo-nextest via `just test`.
+#   2. println!/eprintln! grep-lint — the `output-lint` job forbids direct stdio
+#      macros outside src/ui/ and src/main.rs, keeping user output on the ui layer.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - uses: DeterminateSystems/magic-nix-cache-action@v2
+      - name: Lint (rustfmt + clippy)
+        run: nix develop --command just lint
+
+  # ADR-0013 mandatory gate #2: no direct stdout/stderr macros outside the ui
+  # layer and the binary entrypoint. Pure grep — no toolchain needed, so it runs
+  # without the devshell and fails the pipeline fast.
+  output-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Forbid println!/eprintln! outside src/ui/ and src/main.rs
+        run: |
+          hits=$(grep -rnE '\b(println!|eprintln!|print!|eprint!)' src \
+            --include='*.rs' \
+            | grep -vE '^src/(ui/|main\.rs)' \
+            || true)
+          if [ -n "$hits" ]; then
+            echo "::error::println!/eprintln! is only allowed in src/ui/ and src/main.rs (ADR-0013)."
+            echo "$hits"
+            exit 1
+          fi
+          echo "output-lint: no forbidden stdio macros outside the ui layer."
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - uses: DeterminateSystems/magic-nix-cache-action@v2
+      # ADR-0013 mandatory gate #1: the exit-code matrix unit test (ADR-0005,
+      # exit codes 0-7) is part of the suite run here by cargo-nextest.
+      - name: Test
+        run: nix develop --command just test
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - uses: DeterminateSystems/magic-nix-cache-action@v2
+      - name: Build
+        run: nix develop --command just build
+
+  # Supply-chain gate: cargo-deny (licenses + advisories) from the ADR-0013 stack.
+  deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - uses: DeterminateSystems/magic-nix-cache-action@v2
+      - name: Supply-chain audit (cargo-deny)
+        run: nix develop --command just deny
