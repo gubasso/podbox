@@ -1,0 +1,65 @@
+# Release CI for podbox — crates.io publishing via release-plz with crates.io
+# Trusted Publishing (OIDC). Decisions are owned by the cargo-publish domain and
+# encoded in release-plz.toml; this workflow only wires them into GitHub Actions.
+#
+# Auth model — Trusted Publishing (OIDC), NO long-lived token:
+#   * `permissions.id-token: write` lets the job mint a short-lived OIDC token.
+#   * release-plz mints and exchanges that OIDC token with crates.io itself, so
+#     there is NO CARGO_REGISTRY_TOKEN and NO rust-lang/crates-io-auth-action step.
+#   * Trusted Publishing on crates.io can only be configured against an already
+#     published crate, so the FIRST publish stays MANUAL (`cargo publish` locally,
+#     see PUBLISHING.md). After that first release, this workflow publishes.
+#
+# Toolchain reuse — the pinned rust-toolchain.toml + ADR-0013 stack come from the
+# Nix flake devshell, exactly like ci.yml. Instead of a divergent toolchain setup
+# action, the devshell PATH is exported into $GITHUB_ENV so the flake's cargo/rustc
+# back the release-plz action.
+#
+# Binary distribution (cargo-dist / axodotdev `dist`) is intentionally NOT authored
+# here: its release workflow (.github/workflows/release-dist.yml or similar) is a
+# GENERATED artifact produced by `dist init` / `dist generate` from dist-workspace.toml.
+# Do not hand-edit it — regenerate with `dist generate` after changing dist config.
+
+name: release-plz
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  release-plz:
+    # Skip forks: OIDC + write permissions only make sense on the canonical repo.
+    if: github.repository_owner == 'gubasso'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - uses: DeterminateSystems/magic-nix-cache-action@v2
+
+      # Reuse the flake devshell toolchain (rust-toolchain.toml pin + ADR-0013
+      # stack): export the devshell PATH so subsequent steps — including the
+      # release-plz action, which shells out to cargo — use the pinned toolchain.
+      - name: Export flake devshell toolchain
+        run: nix develop --command bash -c 'echo "PATH=$PATH" >> "$GITHUB_ENV"'
+
+      # release-plz mints the crates.io OIDC token itself (Trusted Publishing).
+      # No CARGO_REGISTRY_TOKEN, no separate auth action.
+      - name: Run release-plz
+        uses: release-plz/action@v0.5
+        with:
+          command: release-plz
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

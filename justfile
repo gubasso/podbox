@@ -91,6 +91,33 @@ machete:
 bloat:
     {{nix}} cargo bloat --release
 
+# --- Release / publish (bootstrap-cargo-publish) ---
+#
+# Publishing logic lives in the deployed scripts/ helpers, never inlined here.
+# The auth gate lives only in ./scripts/publish. CI (release-plz, Trusted
+# Publishing via OIDC) is the normal release path; these recipes are the local
+# operator surface. See PUBLISHING.md.
+
+# Dry-run crates.io readiness (no token required).
+publish-dry:
+    {{nix}} ./scripts/publish-dry
+
+# Publish to crates.io (auth-gated; the first publish is manual).
+publish:
+    {{nix}} ./scripts/publish
+
+# Update versions + changelog locally (release-plz update).
+release-update:
+    {{nix}} ./scripts/release release-plz-update
+
+# Open/refresh the release PR (release-plz release-pr).
+release-pr:
+    {{nix}} ./scripts/release release-plz-pr
+
+# Check public API semver compatibility (cargo semver-checks).
+semver-check:
+    {{nix}} ./scripts/release semver-check
+
 # --- Aggregate gate ---
 
 # What contributors (and CI) run before pushing: lint + test + supply-chain.
