@@ -13,13 +13,54 @@ only** — they confirm crates.io auth is set up, never that a token is valid.
 ## First release (manual)
 
 Trusted Publishing is configured on crates.io **against an already-existing crate**, so the very first
-version must be published manually:
+version must be published manually. After this one-time bootstrap, CI publishes every subsequent
+release over OIDC with no stored token.
 
-1. Create an API token at <https://crates.io/settings/tokens>.
-2. `cargo login` and paste the token (stored in `$CARGO_HOME/credentials.toml`).
-3. Validate: `./scripts/publish-dry`.
-4. Publish: `./scripts/publish`.
-5. Configure Trusted Publishing for this repo/workflow on the crate's crates.io settings page.
+0. **Prerequisite — crate metadata.** crates.io **rejects** a publish without `description` and a
+   license, and warns without `repository`. Confirm `Cargo.toml` has `description`, `license`,
+   `repository`, and `readme`, then validate the package builds and ships the intended files (no token
+   needed):
+
+   ```bash
+   ./scripts/publish-dry
+   ```
+
+1. **Create a scoped API token** at <https://crates.io/settings/tokens>. Use a narrow, disposable,
+   least-privilege token — not a broad "manage everything" one:
+   - **Name:** `podbox-bootstrap-first-publish` (obviously a one-off, so it gets revoked later).
+   - **Endpoint scopes:** **`publish-new` only** — the first publish *creates* the crate, so
+     `publish-new` is required and `publish-update` is not. Leave `yank`, `change-owners`, and
+     `legacy` unchecked.
+   - **Crate scopes:** the exact name **`podbox`** (no wildcard).
+   - **Expiration:** the **shortest** option offered — this token only needs to live long enough for
+     one publish.
+
+2. **Log in** and paste the token (cargo stores it in `$CARGO_HOME/credentials.toml`):
+
+   ```bash
+   cargo login
+   ```
+
+3. **Validate again** (this is what the auth-gated publish will build):
+
+   ```bash
+   ./scripts/publish-dry
+   ```
+
+4. **Publish** the first version:
+
+   ```bash
+   ./scripts/publish
+   ```
+
+5. **Configure Trusted Publishing** for this repo/workflow on the crate's crates.io settings page,
+   matching `.github/workflows/release.yml` (owner/repo `gubasso/podbox`, workflow `release-plz`).
+   From here on, CI mints a short-lived OIDC token itself — see
+   [Trusted Publishing / OIDC](#trusted-publishing--oidc-default-for-ci).
+
+6. **Revoke the bootstrap token** on <https://crates.io/settings/tokens>. Its only job is done; CI no
+   longer needs it. Keep a long-lived token only if you want the local escape hatch (see
+   [Token fallback](#token-fallback)).
 
 ## Authentication setup
 

@@ -1,7 +1,11 @@
 # podbox
 
-A workspace / dev-container tool that wraps a container runtime, giving each
-project a reproducible, isolated development environment.
+A workspace / dev-container tool that gives each project a reproducible,
+disposable development sandbox. podbox drives a familiar **OCI / Podman
+interface**, but runs each workspace inside a **KVM-class microVM** — a real
+hardware-virtualization boundary, not a shared kernel. A primary goal is a
+**secure sandbox for coding AI agents** (and any untrusted or self-modifying
+code) to execute without unmediated access to the host.
 
 > Status: early development. Nothing is implemented yet beyond a stub binary —
 > the product contract and its Rust implementation binding are specified first.

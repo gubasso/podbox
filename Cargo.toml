@@ -3,5 +3,33 @@ name = "podbox"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+description = "Secure, reproducible per-workspace dev sandbox — an OCI/Podman interface backed by KVM-class microVMs, hardened for running untrusted code and coding AI agents."
+repository = "https://github.com/gubasso/podbox"
+readme = "README.md"
+keywords = ["sandbox", "microvm", "ai-agents", "devcontainer", "podman"]
+categories = ["command-line-utilities", "development-tools", "virtualization"]
+# Keep the published .crate lean: ship only what builds the binary (src/ + Cargo.toml
+# + Cargo.lock) plus README/LICENSE for the crates.io page. Project docs live in the
+# repo (see `repository`); dev/CI tooling is not a build input. Review this list
+# whenever a new top-level config artifact is added — see CLAUDE.md.
+exclude = [
+  "/docs",
+  "/CLAUDE.md",
+  "/.github",
+  "/scripts",
+  "/.config",
+  "/.direnv",
+  "/flake.nix",
+  "/flake.lock",
+  "/.envrc",
+  "/.editorconfig",
+  "/.pre-commit-config.yaml",
+  "/deny.toml",
+  "/committed.toml",
+  "/dist-workspace.toml",
+  "/release-plz.toml",
+  "/justfile",
+  "/rust-toolchain.toml",
+]
 
 [dependencies]
