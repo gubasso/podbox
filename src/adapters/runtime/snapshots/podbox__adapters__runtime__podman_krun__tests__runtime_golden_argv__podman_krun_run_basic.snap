@@ -1,0 +1,20 @@
+---
+source: src/adapters/runtime/podman_krun.rs
+assertion_line: 177
+expression: argv
+---
+[
+  "podman",
+  "run",
+  "--rm",
+  "--runtime=krun",
+  "--security-opt=no-new-privileges",
+  "--cap-drop=ALL",
+  "--network=none",
+  "--workdir",
+  "/workspaces/project",
+  "--mount=type=tmpfs,destination=/run/podbox/credentials",
+  "--label=dev.podbox.netback.ready=github.com:443",
+  "localhost/podbox-test:latest",
+  "/usr/bin/podbox-guest"
+]

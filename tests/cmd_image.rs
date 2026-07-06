@@ -1,7 +1,7 @@
 mod support;
 
 #[test]
-fn image_build_fails_closed_with_unavailable_production_runtime() {
+fn image_build_fails_closed_when_live_runtime_is_missing() {
     let env = support::TestEnv::new();
     support::write(
         env.path("config/images/demo/devcontainer.json"),
@@ -11,9 +11,7 @@ fn image_build_fails_closed_with_unavailable_production_runtime() {
         .args(["image", "build", "demo"])
         .assert()
         .code(3)
-        .stderr(predicates::str::contains(
-            "live runtime backend is not implemented",
-        ));
+        .stderr(predicates::str::contains("runtime backend executable"));
 }
 
 #[test]

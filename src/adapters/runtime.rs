@@ -1,7 +1,10 @@
 pub(crate) mod credentials;
+pub(crate) mod guest_channel;
+mod podman_krun;
 pub(crate) mod stub;
 
 use std::process::Command;
+use std::sync::Arc;
 
 use camino::Utf8PathBuf;
 use thiserror::Error;
@@ -41,6 +44,35 @@ pub(crate) trait RuntimeAdapter: Send + Sync {
     fn run_devcontainer(&self, spec: &DevcontainerRunSpec) -> Result<RuntimeStatus, RuntimeError>;
 }
 
+pub(crate) fn default_adapter() -> Arc<dyn RuntimeAdapter> {
+    Arc::new(podman_krun::PodmanKrunRuntime::new())
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct HostProbeOutput {
+    pub(crate) status: Option<i32>,
+    pub(crate) stderr: String,
+    pub(crate) stdout: String,
+}
+
+impl HostProbeOutput {
+    pub(crate) fn success(&self) -> bool {
+        self.status == Some(0)
+    }
+}
+
+pub(crate) fn host_runtime_info_probe() -> Result<HostProbeOutput, std::io::Error> {
+    podman_krun::host_runtime_info_probe()
+}
+
+pub(crate) fn host_runtime_info_reproduction() -> &'static str {
+    podman_krun::host_runtime_info_reproduction()
+}
+
+pub(crate) fn host_runtime_builder_probe() -> Result<HostProbeOutput, std::io::Error> {
+    podman_krun::host_runtime_builder_probe()
+}
+
 #[derive(Debug, Error)]
 pub(crate) enum RuntimeError {
     #[error("runtime backend is unavailable: {0}")]
@@ -51,6 +83,8 @@ pub(crate) enum RuntimeError {
     NotExecutable(String),
     #[error("runtime child failed to spawn: {0}")]
     Spawn(String),
+    #[error("runtime requirement is unsupported: {0}")]
+    Unsupported(String),
 }
 
 impl RuntimeError {
@@ -59,7 +93,8 @@ impl RuntimeError {
             RuntimeError::Unavailable(message)
             | RuntimeError::MissingExecutable(message)
             | RuntimeError::NotExecutable(message)
-            | RuntimeError::Spawn(message) => AppError::HostRuntime { message },
+            | RuntimeError::Spawn(message)
+            | RuntimeError::Unsupported(message) => AppError::HostRuntime { message },
         }
     }
 }

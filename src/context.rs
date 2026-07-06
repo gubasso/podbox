@@ -5,7 +5,7 @@ use tracing_appender::non_blocking::WorkerGuard;
 
 use crate::{
     adapters::{
-        runtime::{RuntimeAdapter, UnavailableRuntimeAdapter},
+        runtime::{self, RuntimeAdapter},
         state_store::{FsStateStore, StateStore},
     },
     cli::GlobalArgs,
@@ -43,7 +43,7 @@ impl AppContext {
             global.workspace.as_deref(),
         )?;
         let state_store = Arc::new(FsStateStore::new(roots.state.clone()));
-        let runtime_adapter = Arc::new(UnavailableRuntimeAdapter);
+        let runtime_adapter = runtime::default_adapter();
         Ok(Self {
             global,
             runtime,
