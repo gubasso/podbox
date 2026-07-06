@@ -1,3 +1,3 @@
-fn main() {
-    println!("{}", podbox::greeting());
+fn main() -> std::process::ExitCode {
+    podbox::run()
 }

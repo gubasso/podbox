@@ -1,26 +1,39 @@
 //! podbox library crate.
-//!
-//! The binary is a thin shell over this library so the logic stays unit-,
-//! integration-, and doc-testable. This `greeting` is a placeholder standing in
-//! until the real implementation lands.
 
-/// Returns the crate's startup banner.
-///
-/// # Examples
-///
-/// ```
-/// assert_eq!(podbox::greeting(), "Hello, world!");
-/// ```
-pub fn greeting() -> &'static str {
-    "Hello, world!"
+#![allow(dead_code)]
+
+pub(crate) mod adapters;
+pub(crate) mod cli;
+pub(crate) mod commands;
+pub(crate) mod config;
+pub(crate) mod context;
+pub(crate) mod domain;
+pub(crate) mod error;
+pub(crate) mod exit;
+pub(crate) mod logging;
+pub(crate) mod services;
+pub(crate) mod ui;
+pub(crate) mod util;
+
+use std::process::ExitCode;
+
+use clap::Parser;
+
+pub fn run() -> ExitCode {
+    match run_inner() {
+        Ok(()) => ExitCode::from(exit::SUCCESS),
+        Err(err) => {
+            if let Ok(ui) = ui::Ui::from_env(false, false) {
+                let _ = ui.stderr_line(&format!("{}: {}", err.kind(), err));
+            }
+            ExitCode::from(err.exit_code())
+        }
+    }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::greeting;
-
-    #[test]
-    fn greeting_is_stable() {
-        assert_eq!(greeting(), "Hello, world!");
-    }
+fn run_inner() -> Result<(), error::AppError> {
+    let cli = cli::Cli::parse();
+    cli.validate()?;
+    let ctx = context::AppContext::build(cli.global.clone())?;
+    commands::dispatch(&ctx, cli.command)
 }
