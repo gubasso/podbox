@@ -24,6 +24,8 @@ pub(crate) enum ReconcilePolicy {
 pub(crate) struct WorkspaceState {
     pub(crate) identity: WorkspaceIdentity,
     pub(crate) state: crate::domain::state::SandboxState,
+    pub(crate) failure: Option<String>,
+    pub(crate) image_freshness: Option<crate::domain::image::FreshnessProof>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

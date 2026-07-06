@@ -1,5 +1,6 @@
 pub(crate) mod config;
 pub(crate) mod doctor;
+pub(crate) mod image;
 pub(crate) mod manifest;
 pub(crate) mod version;
 
@@ -60,4 +61,5 @@ pub(crate) enum Commands {
     Doctor(doctor::DoctorArgs),
     Config(config::ConfigArgs),
     Manifest(manifest::ManifestArgs),
+    Image(image::ImageArgs),
 }

@@ -1,32 +1,39 @@
-use serde::Serialize;
-
 use crate::{
-    cli::doctor::DoctorArgs, context::AppContext, domain::doctor::Severity, error::AppError,
+    cli::doctor::DoctorArgs,
+    context::AppContext,
+    error::AppError,
+    services::doctor::{self, StdDoctorProbe},
 };
 
-#[derive(Serialize)]
-struct DoctorSkeleton {
-    schema_version: u32,
-    scope: crate::cli::doctor::DoctorScope,
-    status: Severity,
-    catalog_status: &'static str,
-    checks: Vec<String>,
-}
-
 pub(crate) fn run(ctx: &AppContext, args: DoctorArgs) -> Result<(), AppError> {
-    let report = DoctorSkeleton {
-        schema_version: crate::util::schema_version(),
-        scope: args.scope,
-        status: Severity::Unknown,
-        catalog_status: "not_implemented",
-        checks: Vec::new(),
-    };
+    let report = doctor::catalog(args.scope, &StdDoctorProbe);
     if args.json || ctx.global.json {
-        ctx.ui.json(&report)
+        ctx.ui.json(&report)?;
     } else if args.quiet || ctx.global.quiet {
+        // quiet suppresses report output but preserves exit classification.
+    } else {
+        ctx.ui
+            .stdout_line(&format!("status: {:?}", report.status).to_lowercase())?;
+        for check in &report.checks {
+            ctx.ui
+                .stdout_line(&format!("{}: {:?}", check.id.0, check.status).to_lowercase())?;
+        }
+    }
+    let code = doctor::exit_code(&report, ctx.config.config.defaults.doctor_strict);
+    if code == crate::exit::SUCCESS {
         Ok(())
     } else {
-        ctx.ui.stdout_line("doctor: not_implemented")?;
-        ctx.ui.stdout_line("status: unknown")
+        Err(match code {
+            crate::exit::USAGE_OR_CONFIG => {
+                AppError::config_syntax("doctor found configuration failures")
+            }
+            crate::exit::HOST_RUNTIME => AppError::HostRuntime {
+                message: "doctor found host/runtime failures".to_string(),
+            },
+            crate::exit::VALIDATION => AppError::Validation {
+                message: "doctor found strict warnings".to_string(),
+            },
+            _ => AppError::unexpected("doctor produced unsupported exit code"),
+        })
     }
 }

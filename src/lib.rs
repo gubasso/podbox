@@ -21,7 +21,7 @@ use clap::Parser;
 
 pub fn run() -> ExitCode {
     match run_inner() {
-        Ok(()) => ExitCode::from(exit::SUCCESS),
+        Ok(code) => ExitCode::from(code),
         Err(err) => {
             if let Ok(ui) = ui::Ui::from_env(false, false) {
                 let _ = ui.stderr_line(&format!("{}: {}", err.kind(), err));
@@ -31,7 +31,7 @@ pub fn run() -> ExitCode {
     }
 }
 
-fn run_inner() -> Result<(), error::AppError> {
+fn run_inner() -> Result<u8, error::AppError> {
     let cli = cli::Cli::parse();
     cli.validate()?;
     let ctx = context::AppContext::build(cli.global.clone())?;

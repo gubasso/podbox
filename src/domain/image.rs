@@ -18,6 +18,14 @@ pub(crate) struct BuildContext(pub(crate) String);
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub(crate) struct SourceGraph {
     pub(crate) digest: Digest,
+    pub(crate) pull_policy: PullPolicy,
+    pub(crate) files: Vec<SourceGraphFile>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub(crate) struct SourceGraphFile {
+    pub(crate) path: String,
+    pub(crate) digest: Digest,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -41,6 +49,7 @@ pub(crate) enum PullPolicy {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub(crate) struct FreshnessProof {
     pub(crate) digest: Digest,
+    pub(crate) graph: SourceGraph,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

@@ -73,6 +73,8 @@ pub(crate) struct DefaultsConfig {
     pub(crate) color: String,
     #[serde(default = "default_output")]
     pub(crate) output: String,
+    #[serde(default)]
+    pub(crate) doctor_strict: bool,
     #[serde(flatten)]
     pub(crate) unknown: BTreeMap<String, toml::Value>,
 }
@@ -84,6 +86,7 @@ impl Default for DefaultsConfig {
             reconcile: default_reconcile(),
             color: default_color(),
             output: default_output(),
+            doctor_strict: false,
             unknown: BTreeMap::new(),
         }
     }

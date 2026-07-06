@@ -1,0 +1,19 @@
+---
+source: src/adapters/runtime.rs
+expression: "DevcontainerCommand::new(&spec).to_args()"
+---
+[
+  "devcontainer",
+  "run",
+  "--rm",
+  "--podbox-zone=runtime",
+  "--security-opt=no-new-privileges",
+  "--cap-drop=ALL",
+  "--network=none",
+  "--workspace=/workspaces/project",
+  "--image=podbox-test:latest",
+  "--podbox-network-allow=github.com:443",
+  "--mount=type=tmpfs,destination=/run/podbox/credentials",
+  "/bin/echo",
+  "ok"
+]
