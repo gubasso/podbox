@@ -1,6 +1,11 @@
 # release-plz configuration. See https://release-plz.dev/docs/config for all options.
 # Conservative defaults; a workspace maintainer can override per package with a
 # [[package]] table (e.g. to opt a member out of publishing).
+#
+# Branch model: release-plz runs on the default branch `develop` (auto-detected,
+# no branch key needed) — it opens the release PR there and, on merge, tags +
+# publishes from `develop`. The release.yml `promote` job then fast-forwards
+# `master` (the released-code mirror) onto the published commit.
 [workspace]
 changelog_update = true
 release_always = false

@@ -53,14 +53,26 @@ release over OIDC with no stored token.
    ./scripts/publish
    ```
 
-5. **Configure Trusted Publishing** for this repo/workflow on the crate's crates.io settings page,
-   matching `.github/workflows/release.yml` (owner/repo `gubasso/podbox`, workflow `release-plz`).
-   From here on, CI mints a short-lived OIDC token itself — see
+5. **Configure Trusted Publishing** on the crate settings page
+   (<https://crates.io/crates/podbox/settings>, the "Trusted Publishing" section — a crate *owner*
+   only). Add a GitHub Actions publisher matching `.github/workflows/release.yml`:
+   - **Repository owner:** `gubasso`
+   - **Repository name:** `podbox`
+   - **Workflow filename:** `release.yml` — this is the workflow *file* name, **not** the workflow's
+     `name:` field (which is `release-plz`).
+   - **Environment:** leave blank (the `release-plz` job declares no `environment:`).
+
+   The publisher matches on owner + repo + workflow filename (+ optional environment) — it is
+   **branch-agnostic**, so the `develop` trigger needs no change here. From now on CI mints a
+   short-lived OIDC token itself — see
    [Trusted Publishing / OIDC](#trusted-publishing--oidc-default-for-ci).
 
 6. **Revoke the bootstrap token** on <https://crates.io/settings/tokens>. Its only job is done; CI no
    longer needs it. Keep a long-lived token only if you want the local escape hatch (see
    [Token fallback](#token-fallback)).
+
+7. **(Recommended) Enforce Trusted Publishing** — see
+   [Require trusted publishing](#require-trusted-publishing-hardening) below.
 
 ## Authentication setup
 
@@ -74,10 +86,43 @@ Short-lived, no long-lived secret.
 - **With a plain `cargo publish` workflow:** use `rust-lang/crates-io-auth-action` to mint a
   short-lived token, then run `cargo publish`.
 
+#### Configure the trusted publisher (one-time)
+
+Do this once, after the crate exists (i.e. after the first manual publish). On the **crate settings
+page** — <https://crates.io/crates/podbox/settings>, the **Trusted Publishing** section (a crate
+*owner* only) — add a GitHub Actions publisher matching `.github/workflows/release.yml`:
+
+1. Open <https://crates.io/crates/podbox/settings> and find **Trusted Publishing** → **Add**.
+2. Fill the form:
+   - **Repository owner:** `gubasso`
+   - **Repository name:** `podbox`
+   - **Workflow filename:** `release.yml` — the file name, **not** the workflow's `name:`
+     (`release-plz`).
+   - **Environment:** leave blank (the job declares no `environment:`).
+3. Save. The publisher matches on owner + repo + workflow filename (+ optional environment) and is
+   **branch-agnostic**, so the `develop` trigger needs no change here.
+
+This is the same configuration referenced by step 5 of
+[First release (manual)](#first-release-manual); after it is in place, CI publishes every release
+over OIDC with no stored token.
+
 ### Token fallback
 
 When OIDC is unavailable, or for local publishing, use a long-lived token: `cargo login` locally, or a
 `CARGO_REGISTRY_TOKEN` secret in CI.
+
+### Require trusted publishing (hardening)
+
+The crate settings page has a **"Require trusted publishing for all new versions"** checkbox. When
+enabled, crates.io **rejects every publish that authenticates with an API token** (both local
+`cargo login` tokens and a `CARGO_REGISTRY_TOKEN`); only an OIDC exchange from the configured trusted
+publisher can push a new version. This eliminates the long-lived-token attack surface entirely and is
+the strongest posture crates.io offers.
+
+**Recommended:** enable it — podbox releases exclusively over CI + OIDC, so nothing legitimate uses a
+token. The one caveat: it disables the local token escape hatch below, so a hand-publish
+([Manual release if CI is down](#manual-release-if-ci-is-down)) requires temporarily unchecking the
+box first. It only affects *new* versions; the existing publish is untouched.
 
 ## SemVer policy
 
@@ -87,10 +132,15 @@ API to check but still follows semantic versioning for its releases.
 
 ## Routine automated release
 
-1. Merge feature work to the default branch.
-2. release-plz opens/updates the release PR (version bump + changelog).
+**Branch model:** `develop` is the integration branch and the release trigger; `master` is the
+released-code mirror. `.github/workflows/release.yml` runs release-plz on `develop`, and its
+`promote` job fast-forwards `master` onto each published commit.
+
+1. Merge feature work to `develop`.
+2. release-plz opens/updates the release PR on `develop` (version bump + changelog).
 3. Review the PR; merge it.
-4. release-plz tags the release and publishes to crates.io.
+4. release-plz tags the release and publishes to crates.io over OIDC.
+5. The `promote` job fast-forwards `master` to the released commit.
 
 ## Local operator release
 
@@ -115,8 +165,11 @@ to GitHub releases. It is separate from crates.io publishing and configured in `
 
 1. `./scripts/publish-dry` to validate.
 2. `./scripts/release semver-check` (library crates).
-3. Ensure auth is configured (`cargo login`).
-4. `./scripts/publish`.
+3. If [Require trusted publishing](#require-trusted-publishing-hardening) is enabled, temporarily
+   **uncheck** it on <https://crates.io/crates/podbox/settings> — otherwise crates.io rejects the
+   token-based publish. Re-enable it once CI is healthy again.
+4. Ensure auth is configured (`cargo login`).
+5. `./scripts/publish`.
 
 ## Yank and rollback
 

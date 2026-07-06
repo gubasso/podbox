@@ -24,7 +24,7 @@ name: release-plz
 
 on:
   push:
-    branches: [main]
+    branches: [develop]
 
 permissions:
   contents: write
@@ -36,6 +36,12 @@ jobs:
     # Skip forks: OIDC + write permissions only make sense on the canonical repo.
     if: github.repository_owner == 'gubasso'
     runs-on: ubuntu-latest
+    # Expose whether a release was cut, and the JSON describing it, so the
+    # `promote` job can fast-forward `master` only when release-plz actually
+    # tagged + published a new version — and onto that exact release tag.
+    outputs:
+      releases_created: ${{ steps.release-plz.outputs.releases_created }}
+      releases: ${{ steps.release-plz.outputs.releases }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -58,8 +64,65 @@ jobs:
       # release-plz mints the crates.io OIDC token itself (Trusted Publishing).
       # No CARGO_REGISTRY_TOKEN, no separate auth action.
       - name: Run release-plz
+        id: release-plz
         uses: release-plz/action@v0.5
         with:
           command: release-plz
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Branch model: `develop` is the integration + release-trigger branch;
+  # `master` is the released-code mirror. release-plz tags + publishes from
+  # `develop`; this job fast-forwards `master` onto the release *tag* (the
+  # canonical release marker, e.g. v0.2.0) so `master` points exactly at what
+  # was published — not merely at whatever this run's trigger SHA happened to be.
+  #
+  # Why this lives here (and not a separate `on: push: tags` workflow): a tag
+  # pushed by release-plz with the default GITHUB_TOKEN does NOT retrigger other
+  # workflows, so a tag-triggered promote would never fire. Running promote as a
+  # `needs:` job in the same run sidesteps that. If you later put `master` behind
+  # a protected ruleset that requires its own CI on promotion, mint a GitHub App
+  # token (actions/create-github-app-token) for release-plz so its tag push CAN
+  # drive a standalone release-promote.yml with the App in the bypass list.
+  promote:
+    needs: release-plz
+    if: github.repository_owner == 'gubasso' && needs.release-plz.outputs.releases_created == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Fast-forward master to the release tag
+        env:
+          RELEASES: ${{ needs.release-plz.outputs.releases }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # The tag release-plz just created is the canonical release marker;
+          # promote master onto it rather than onto the trigger SHA.
+          tag="$(printf '%s' "$RELEASES" | jq -r '.[0].tag')"
+          if [ -z "$tag" ] || [ "$tag" = "null" ]; then
+            echo "::error::could not determine the release tag from release-plz output." >&2
+            exit 1
+          fi
+
+          git fetch origin --tags
+          git fetch origin develop
+          tag_sha="$(git rev-parse "refs/tags/${tag}^{commit}")"
+
+          # Guard: the tagged commit must be on develop (fail loudly otherwise).
+          if ! git merge-base --is-ancestor "$tag_sha" origin/develop; then
+            echo "::error::tag $tag ($tag_sha) is not on develop; refusing to promote master." >&2
+            exit 1
+          fi
+
+          if git rev-parse --verify --quiet origin/master >/dev/null; then
+            git checkout -B master origin/master
+            git merge --ff-only "$tag_sha"
+          else
+            # First release: master does not exist yet — create it at the tag.
+            git checkout -B master "$tag_sha"
+          fi
+          git push origin master
