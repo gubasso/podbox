@@ -94,7 +94,7 @@ descriptive document is wrong and MUST be reconciled to this list.
 - **U2.** `init` MUST yield a lean, clean, non-bloated baseline and MUST run `doctor` afterward
   (unless `--dry-run`). (`02-…` §4.2)
 - **U3.** `doctor` MUST check all requirements with specific, actionable diagnostics (no generic
-  "unavailable"), and MUST be invokable both standalone and as a post-step. (`02-…` §4.3, `08-…`)
+  "unavailable"), and MUST be invocable both standalone and as a post-step. (`02-…` §4.3, `08-…`)
 - **U4.** Output MUST follow stream discipline (stdout = data, stderr = diagnostics), offer `--json`
   for machines, honor `--quiet`/`--verbose`/`--no-color`, and never require scraping human text.
   (`10-…`)

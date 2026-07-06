@@ -14,6 +14,7 @@ categories = ["command-line-utilities", "development-tools", "virtualization"]
 # whenever a new top-level config artifact is added — see CLAUDE.md.
 exclude = [
   "/docs",
+  "/tests",
   "/CLAUDE.md",
   "/.github",
   "/scripts",
