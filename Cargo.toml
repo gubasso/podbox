@@ -41,6 +41,8 @@ anstyle = "1.0.14"
 anyhow = "1.0.103"
 camino = "1.2.4"
 clap = { version = "4.6.1", features = ["derive", "env", "wrap_help"] }
+clap_complete = "4.6.7"
+clap_mangen = "0.3.0"
 directories = "6.0.0"
 figment = { version = "0.10.19", features = ["env", "toml"] }
 fs4 = "1.1.0"

@@ -34,7 +34,7 @@ impl AppContext {
             .enable_all()
             .build()
             .map_err(|err| AppError::unexpected(format!("failed to build runtime: {err}")))?;
-        let ui = Ui::from_env(global.no_color, global.quiet)?;
+        let ui = Ui::from_env(global.no_color || global.json, global.quiet)?;
         let cwd = env::current_dir()
             .map_err(|err| AppError::unexpected(format!("failed to read cwd: {err}")))?;
         let config = LoadedConfig::load(

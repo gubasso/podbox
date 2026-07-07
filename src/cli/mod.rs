@@ -1,9 +1,12 @@
+pub(crate) mod completion;
 pub(crate) mod config;
 pub(crate) mod doctor;
 pub(crate) mod image;
+pub(crate) mod init;
 pub(crate) mod manifest;
 pub(crate) mod network;
 pub(crate) mod shell;
+pub(crate) mod status;
 pub(crate) mod version;
 pub(crate) mod workspace;
 
@@ -61,8 +64,13 @@ pub(crate) struct GlobalArgs {
 pub(crate) enum Commands {
     // U1: shell is intentionally reserved as the first help entry in the live round.
     Shell(shell::ShellArgs),
-    Version(version::VersionArgs),
+    Init(init::InitArgs),
     Doctor(doctor::DoctorArgs),
+    Status(status::StatusArgs),
+    Completion(completion::CompletionArgs),
+    #[command(hide = true)]
+    Manpage,
+    Version(version::VersionArgs),
     Workspace(workspace::WorkspaceArgs),
     Network(network::NetworkArgs),
     Config(config::ConfigArgs),

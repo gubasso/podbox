@@ -25,17 +25,7 @@ pub(crate) fn run(ctx: &AppContext, args: WorkspaceArgs) -> Result<u8, AppError>
         .map(|()| crate::exit::SUCCESS),
         WorkspaceCommand::Status => {
             let report = service.status()?;
-            if ctx.global.json {
-                ctx.ui.json(&report)?;
-            } else {
-                ctx.ui
-                    .stdout_line(&format!("workspace: {}", report.identity.label.0))?;
-                ctx.ui
-                    .stdout_line(&format!("state: {:?}", report.state).to_lowercase())?;
-                if let Some(image) = report.image {
-                    ctx.ui.stdout_line(&format!("image: {image}"))?;
-                }
-            }
+            crate::commands::status::render(ctx, ctx.global.json, &report)?;
             Ok(crate::exit::SUCCESS)
         }
     }

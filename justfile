@@ -52,6 +52,33 @@ snapshot-review:
 mutants:
     {{nix}} cargo mutants
 
+# Mutation testing scoped to ADR-0013 critical modules.
+mutants-critical:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set +e
+    output="$({{nix}} cargo mutants --package podbox \
+        --file src/services/compose.rs \
+        --file src/domain/digest.rs \
+        --file src/exit.rs \
+        --file src/config/loader.rs 2>&1)"
+    status=$?
+    set -e
+    echo "$output"
+    summary="$(grep -E '[0-9]+ mutants tested .*: [0-9]+ missed, [0-9]+ caught, [0-9]+ unviable' <<<"$output" | tail -1 || true)"
+    if [[ -z "$summary" ]]; then
+        exit "$status"
+    fi
+    missed="$(sed -E 's/.*: ([0-9]+) missed, ([0-9]+) caught, ([0-9]+) unviable.*/\1/' <<<"$summary")"
+    caught="$(sed -E 's/.*: ([0-9]+) missed, ([0-9]+) caught, ([0-9]+) unviable.*/\2/' <<<"$summary")"
+    viable=$((missed + caught))
+    percent=$((caught * 100 / viable))
+    if (( percent < 60 )); then
+        echo "mutation score ${percent}% is below required 60%" >&2
+        exit 2
+    fi
+    echo "mutation score ${percent}% meets required 60%"
+
 # --- Lint / static analysis (ADR-0013) ---
 
 # clippy as a hard gate (warnings are errors).
@@ -89,7 +116,21 @@ machete:
 
 # cargo-bloat: binary size baseline.
 bloat:
-    {{nix}} cargo bloat --release
+    {{nix}} cargo bloat --release --bin podbox
+
+# Verify the published crate payload stays lean (CLAUDE.md).
+package-check:
+    {{nix}} cargo package --list --allow-dirty
+
+# Generate release distribution assets without adding source-tree artifacts.
+dist-assets:
+    mkdir -p target/dist/completions target/dist/man
+    {{nix}} cargo run --bin podbox -- completion bash > target/dist/completions/podbox.bash
+    {{nix}} cargo run --bin podbox -- completion zsh > target/dist/completions/_podbox
+    {{nix}} cargo run --bin podbox -- completion fish > target/dist/completions/podbox.fish
+    {{nix}} cargo run --bin podbox -- completion powershell > target/dist/completions/podbox.ps1
+    {{nix}} cargo run --bin podbox -- completion elvish > target/dist/completions/podbox.elv
+    {{nix}} cargo run --bin podbox -- manpage > target/dist/man/podbox.1
 
 # --- Release / publish (bootstrap-cargo-publish) ---
 #

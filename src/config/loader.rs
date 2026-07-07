@@ -283,3 +283,92 @@ fn record_defaults(config: &Config, provenance: &mut Provenance) {
         provenance.record("network.allow", "default");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn roots(temp: &tempfile::TempDir) -> PodboxRoots {
+        let root = Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap();
+        PodboxRoots {
+            config: root.join("config"),
+            cache: root.join("cache"),
+            state: root.join("state"),
+            data: root.join("data"),
+        }
+    }
+
+    fn write(path: &Utf8Path, body: &str) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(path, body).unwrap();
+    }
+
+    #[test]
+    fn workspace_devcontainer_layers_merge_into_config() {
+        let temp = tempfile::tempdir().unwrap();
+        let roots = roots(&temp);
+        let workspace = roots.data.join("workspace");
+        write(
+            &workspace.join(".devcontainer/devcontainer.json"),
+            r#"{"name":"from-local","runArgs":["local.example:443"]}"#,
+        );
+
+        let loaded = LoadedConfig::load(&roots, None, Some(workspace.as_std_path())).unwrap();
+
+        assert_eq!(loaded.config.defaults.manifest, "from-local");
+        assert_eq!(loaded.config.network.allow, vec!["local.example:443"]);
+        assert_eq!(
+            loaded.provenance.source("defaults.manifest"),
+            "local devcontainer"
+        );
+    }
+
+    #[test]
+    fn project_registry_overrides_workspace_devcontainer_manifest() {
+        let temp = tempfile::tempdir().unwrap();
+        let roots = roots(&temp);
+        let workspace = roots.data.join("workspace");
+        write(
+            &roots.config_file(),
+            &format!(
+                r#"[[projects]]
+path = "{}"
+manifest = "registered"
+"#,
+                workspace
+            ),
+        );
+        write(
+            &workspace.join(".devcontainer/devcontainer.json"),
+            r#"{"name":"local"}"#,
+        );
+
+        let loaded = LoadedConfig::load(&roots, None, Some(workspace.as_std_path())).unwrap();
+
+        assert_eq!(loaded.config.defaults.manifest, "registered");
+        assert_eq!(loaded.provenance.source("defaults.manifest"), "projects");
+    }
+
+    #[test]
+    fn defaults_are_recorded_only_for_missing_leaves() {
+        let temp = tempfile::tempdir().unwrap();
+        let roots = roots(&temp);
+        write(
+            &roots.config_file(),
+            r#"[defaults]
+manifest = "configured"
+
+[network]
+allow = ["configured.example:443"]
+"#,
+        );
+
+        let loaded = LoadedConfig::load(&roots, None, None).unwrap();
+
+        assert_eq!(loaded.provenance.source("defaults.manifest"), "config.toml");
+        assert_eq!(loaded.provenance.source("defaults.reconcile"), "default");
+        assert_eq!(loaded.provenance.source("network.allow"), "config.toml");
+    }
+}

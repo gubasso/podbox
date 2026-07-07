@@ -106,4 +106,10 @@ mod tests {
             assert_eq!(err.exit_code(), code);
         }
     }
+
+    #[test]
+    fn process_exit_preserves_numeric_code() {
+        assert_eq!(exit_process(0), ProcessExitCode::from(0));
+        assert_eq!(exit_process(DESTRUCTIVE_REFUSED), ProcessExitCode::from(7));
+    }
 }

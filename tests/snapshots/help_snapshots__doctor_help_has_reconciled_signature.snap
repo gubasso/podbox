@@ -1,0 +1,20 @@
+---
+source: tests/help_snapshots.rs
+assertion_line: 34
+expression: output
+---
+Usage: podbox doctor [OPTIONS]
+
+Options:
+      --config <CONFIG>
+      --scope <SCOPE>          [default: all] [possible values: all, host, runtime, config,
+                               workspace, images, network]
+      --json
+      --manifest <MANIFEST>
+      --quiet
+      --workspace <WORKSPACE>
+  -v, --verbose...
+      --no-color
+      --yes
+      --dry-run
+  -h, --help                   Print help

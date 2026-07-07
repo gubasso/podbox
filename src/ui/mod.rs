@@ -3,6 +3,7 @@ pub(crate) mod json;
 
 use anstream::{eprintln, println};
 use serde::Serialize;
+use std::io::Write;
 
 use crate::error::AppError;
 
@@ -22,13 +23,11 @@ impl Ui {
     }
 
     pub(crate) fn stdout_line(&self, line: &str) -> Result<(), AppError> {
-        if !self.quiet {
-            if self.color {
-                use owo_colors::OwoColorize;
-                println!("{}", line.green());
-            } else {
-                println!("{line}");
-            }
+        if self.color {
+            use owo_colors::OwoColorize;
+            println!("{}", line.green());
+        } else {
+            println!("{line}");
         }
         Ok(())
     }
@@ -45,5 +44,11 @@ impl Ui {
             .map_err(|err| AppError::unexpected(format!("failed to render json: {err}")))?;
         println!("{rendered}");
         Ok(())
+    }
+
+    pub(crate) fn stdout_raw(&self, bytes: &[u8]) -> Result<(), AppError> {
+        std::io::stdout()
+            .write_all(bytes)
+            .map_err(|err| AppError::unexpected(format!("failed to write stdout: {err}")))
     }
 }

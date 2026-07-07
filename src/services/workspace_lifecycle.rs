@@ -43,8 +43,17 @@ pub(crate) struct WorkspaceStatusReport {
     pub(crate) identity: WorkspaceIdentity,
     pub(crate) state: SandboxState,
     pub(crate) manifest: String,
+    pub(crate) config_sources: Vec<String>,
     pub(crate) image: Option<String>,
+    pub(crate) image_freshness: Option<String>,
     pub(crate) drift: WorkspaceDrift,
+    pub(crate) operation_in_progress: bool,
+    pub(crate) runtime_profile: String,
+    pub(crate) hardening_posture: String,
+    pub(crate) network_policy: String,
+    pub(crate) credential_policy: String,
+    pub(crate) last_reconcile: Option<String>,
+    pub(crate) relaxations: Vec<String>,
     pub(crate) allow: Vec<String>,
 }
 
@@ -321,15 +330,48 @@ impl<'a> WorkspaceLifecycleService<'a> {
             Ok(output) => output.composed.image.clone(),
             Err(_) => None,
         };
+        let image_freshness = image
+            .as_deref()
+            .and_then(|name| ImageBuildService::new(self.ctx).status(name).ok().flatten())
+            .map(|report| {
+                if report.reused {
+                    format!("fresh:{}", report.digest)
+                } else {
+                    format!("rebuilt:{}", report.digest)
+                }
+            });
         let effective_allow = self.effective_allow_for_status(&compose);
         let drift = self.compute_drift(persisted.as_ref(), compose.as_ref(), &effective_allow);
+        let relaxations = self.relaxations(&effective_allow);
+        let config_sources = if self.ctx.config.source_files.is_empty() {
+            vec!["defaults".to_string()]
+        } else {
+            self.ctx
+                .config
+                .source_files
+                .iter()
+                .map(ToString::to_string)
+                .collect()
+        };
         Ok(WorkspaceStatusReport {
             schema_version: crate::util::schema_version(),
             identity,
             state,
             manifest: self.manifest_name(),
+            config_sources,
             image,
+            image_freshness,
             drift,
+            operation_in_progress: false,
+            runtime_profile: self.ctx.config.config.runtime.profile.clone(),
+            hardening_posture: "drop-all-caps,no-new-privileges,tmpfs-tmp".to_string(),
+            network_policy: self.ctx.config.config.network.egress.clone(),
+            credential_policy: "ephemeral".to_string(),
+            last_reconcile: persisted
+                .as_ref()
+                .and_then(|state| state.reconcile_fingerprint.as_ref())
+                .map(|digest| digest.as_str().to_string()),
+            relaxations,
             allow: effective_allow,
         })
     }
@@ -449,6 +491,7 @@ impl<'a> WorkspaceLifecycleService<'a> {
             name: image.to_string(),
             full_rebuild: false,
             pull_policy,
+            dry_run: false,
         })? {
             ImageBuildOutcome::Report(_) => Ok(()),
             ImageBuildOutcome::ChildExit(_) => Err(AppError::Build {
@@ -606,6 +649,26 @@ impl<'a> WorkspaceLifecycleService<'a> {
                     .to_string(),
             )]),
         }
+    }
+
+    fn relaxations(&self, effective_allow: &[String]) -> Vec<String> {
+        let mut relaxations = Vec::new();
+        if !effective_allow.is_empty() {
+            relaxations.push("network.allow".to_string());
+        }
+        if self.ctx.config.config.network.egress != "deny" {
+            relaxations.push(format!(
+                "network.egress={}",
+                self.ctx.config.config.network.egress
+            ));
+        }
+        if self.ctx.config.config.runtime.profile != "microvm" {
+            relaxations.push(format!(
+                "runtime.profile={}",
+                self.ctx.config.config.runtime.profile
+            ));
+        }
+        relaxations
     }
 
     fn require_running(&self, identity: &WorkspaceIdentity) -> Result<(), AppError> {

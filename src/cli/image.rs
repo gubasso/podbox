@@ -9,12 +9,19 @@ pub(crate) struct ImageArgs {
 #[derive(Debug, Subcommand)]
 pub(crate) enum ImageCommand {
     Build {
-        name: String,
+        names: Vec<String>,
+        #[arg(long)]
+        all: bool,
         #[arg(long)]
         full_rebuild: bool,
         #[arg(long, value_enum)]
         pull_policy: Option<PullPolicyArg>,
     },
+    List,
+    Inspect {
+        name: String,
+    },
+    #[command(hide = true)]
     Status {
         name: String,
     },

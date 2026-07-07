@@ -154,3 +154,70 @@ fn metadata_matches(path: &Utf8PathBuf, digest: &Digest) -> Result<bool, AppErro
         Err(err) => Err(AppError::io(path.clone(), err)),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn roots(temp: &tempfile::TempDir) -> PodboxRoots {
+        let root = Utf8PathBuf::from_path_buf(temp.path().to_path_buf()).unwrap();
+        PodboxRoots {
+            config: root.join("config"),
+            cache: root.join("cache"),
+            state: root.join("state"),
+            data: root.join("data"),
+        }
+    }
+
+    fn input(content: &str) -> ComposeInput {
+        ComposeInput {
+            manifest_name: "app".to_string(),
+            manifest_content: "layers = [\"base\"]\n".to_string(),
+            manifest: ManifestDocument {
+                layers: vec![crate::domain::manifest::LayerRef("base".to_string())],
+                runtime: None,
+                resources: None,
+                network: None,
+            },
+            layers: vec![LayerInput {
+                name: "base".to_string(),
+                content: content.to_string(),
+            }],
+        }
+    }
+
+    #[test]
+    fn compose_reuses_cache_only_when_metadata_digest_matches() {
+        let temp = tempfile::tempdir().unwrap();
+        let roots = roots(&temp);
+        let service = ComposeService::new(&roots);
+
+        let first = service
+            .compose(input(r#"{"image":"alpine:latest"}"#))
+            .unwrap();
+        let second = service
+            .compose(input(r#"{"image":"alpine:latest"}"#))
+            .unwrap();
+        let changed = service
+            .compose(input(r#"{"image":"busybox:latest"}"#))
+            .unwrap();
+
+        assert!(!first.reused);
+        assert!(second.reused);
+        assert!(!changed.reused);
+    }
+
+    #[test]
+    fn corrupt_metadata_is_a_validation_error_not_a_cache_hit() {
+        let temp = tempfile::tempdir().unwrap();
+        let roots = roots(&temp);
+        let metadata = roots.cache.join("composed/app/metadata.json");
+        std::fs::create_dir_all(metadata.parent().unwrap()).unwrap();
+        std::fs::write(&metadata, "{not json").unwrap();
+
+        let err = ComposeService::new(&roots)
+            .compose(input(r#"{"image":"alpine:latest"}"#))
+            .unwrap_err();
+        assert_eq!(err.kind(), "validation");
+    }
+}

@@ -19,6 +19,7 @@ pub(crate) struct ImageBuildInput {
     pub(crate) name: String,
     pub(crate) full_rebuild: bool,
     pub(crate) pull_policy: PullPolicy,
+    pub(crate) dry_run: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -28,6 +29,9 @@ pub(crate) struct ImageBuildReport {
     pub(crate) digest: String,
     pub(crate) reused: bool,
     pub(crate) metadata_path: String,
+    /// Dry-run rebuild/reuse rationale (06 §5). `None` outside `--dry-run`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) reason: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -71,6 +75,14 @@ impl<'a> ImageBuildService<'a> {
             .join("images")
             .join(&input.name)
             .join("metadata.json");
+        // `--dry-run` reports the rebuild/reuse decision AND why (06 §5) without
+        // invoking the runtime or writing freshness metadata.
+        if input.dry_run {
+            let (reused, reason) = dry_run_decision(&meta_path, &freshness, input.full_rebuild)?;
+            let mut r = report(&input.name, &freshness, &meta_path, reused);
+            r.reason = Some(reason);
+            return Ok(ImageBuildOutcome::Report(r));
+        }
         if !input.full_rebuild && metadata_matches(&meta_path, &freshness)? {
             return Ok(ImageBuildOutcome::Report(report(
                 &input.name,
@@ -169,6 +181,90 @@ fn source_graph(root: &Utf8Path, pull_policy: PullPolicy) -> Result<SourceGraph,
     })
 }
 
+/// Compute the dry-run rebuild/reuse decision and its rationale (06 §5) by
+/// comparing the current source graph against the recorded freshness proof.
+fn dry_run_decision(
+    path: &Utf8Path,
+    freshness: &FreshnessProof,
+    full_rebuild: bool,
+) -> Result<(bool, String), AppError> {
+    if full_rebuild {
+        return Ok((
+            false,
+            "would rebuild: --full-rebuild forces a no-cache rebuild".to_string(),
+        ));
+    }
+    match fs::read_to_string(path) {
+        Ok(raw) => {
+            // Unreadable freshness metadata means freshness cannot be proven, so a
+            // dry run reports a rebuild with that rationale rather than erroring
+            // out (06 §4/§5) — the strict AppError::Build stays on the real build.
+            let Ok(meta) = serde_json::from_str::<ImageMetadata>(&raw) else {
+                return Ok((
+                    false,
+                    "would rebuild: cached freshness proof is unreadable".to_string(),
+                ));
+            };
+            if meta.freshness.digest == freshness.digest {
+                Ok((
+                    true,
+                    "would reuse: all source-graph inputs unchanged".to_string(),
+                ))
+            } else {
+                Ok((
+                    false,
+                    format!(
+                        "would rebuild: source graph changed ({})",
+                        describe_graph_changes(&meta.freshness, freshness)
+                    ),
+                ))
+            }
+        }
+        Err(err) if err.kind() == ErrorKind::NotFound => Ok((
+            false,
+            "would rebuild: no cached freshness proof (image not yet built)".to_string(),
+        )),
+        Err(err) => Err(AppError::io(path.to_path_buf(), err)),
+    }
+}
+
+/// Summarize which source-graph files were added, removed, or changed between the
+/// recorded and current freshness proofs.
+fn describe_graph_changes(recorded: &FreshnessProof, current: &FreshnessProof) -> String {
+    use std::collections::BTreeMap;
+    let old: BTreeMap<&str, &str> = recorded
+        .graph
+        .files
+        .iter()
+        .map(|f| (f.path.as_str(), f.digest.as_str()))
+        .collect();
+    let new: BTreeMap<&str, &str> = current
+        .graph
+        .files
+        .iter()
+        .map(|f| (f.path.as_str(), f.digest.as_str()))
+        .collect();
+    let mut parts = Vec::new();
+    for (path, digest) in &new {
+        match old.get(path) {
+            None => parts.push(format!("added {path}")),
+            Some(old_digest) if old_digest != digest => parts.push(format!("changed {path}")),
+            Some(_) => {}
+        }
+    }
+    for path in old.keys() {
+        if !new.contains_key(path) {
+            parts.push(format!("removed {path}"));
+        }
+    }
+    if parts.is_empty() {
+        // Digests differ but no per-file change (e.g. pull-policy input changed).
+        "build inputs changed".to_string()
+    } else {
+        parts.join(", ")
+    }
+}
+
 fn metadata_matches(path: &Utf8Path, freshness: &FreshnessProof) -> Result<bool, AppError> {
     match fs::read_to_string(path) {
         Ok(raw) => {
@@ -210,5 +306,6 @@ fn report(
         digest: freshness.digest.as_str().to_string(),
         reused,
         metadata_path: metadata_path.to_string(),
+        reason: None,
     }
 }

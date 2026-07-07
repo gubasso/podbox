@@ -9,10 +9,13 @@ use crate::{
 pub(crate) fn run(ctx: &AppContext, args: ImageArgs) -> Result<u8, AppError> {
     match args.command {
         ImageCommand::Build {
-            name,
+            names,
+            all,
             full_rebuild,
             pull_policy,
-        } => build(ctx, &name, full_rebuild, pull_policy),
+        } => build(ctx, &names, all, full_rebuild, pull_policy),
+        ImageCommand::List => list(ctx).map(|()| crate::exit::SUCCESS),
+        ImageCommand::Inspect { name } => status(ctx, &name).map(|()| crate::exit::SUCCESS),
         ImageCommand::Status { name } => status(ctx, &name).map(|()| crate::exit::SUCCESS),
         ImageCommand::Prune { yes } => prune(ctx, yes).map(|()| crate::exit::SUCCESS),
     }
@@ -20,33 +23,99 @@ pub(crate) fn run(ctx: &AppContext, args: ImageArgs) -> Result<u8, AppError> {
 
 fn build(
     ctx: &AppContext,
-    name: &str,
+    names: &[String],
+    all: bool,
     full_rebuild: bool,
     pull_policy: Option<PullPolicyArg>,
 ) -> Result<u8, AppError> {
+    let targets = if all {
+        if !names.is_empty() {
+            return Err(AppError::usage(
+                "image build accepts either <name>... or --all, not both",
+            ));
+        }
+        image_names(ctx)?
+    } else {
+        if names.is_empty() {
+            return Err(AppError::usage("image build requires <name>... or --all"));
+        }
+        names.to_vec()
+    };
+
+    // Collect every target's outcome first, then render a single document. Under
+    // `--json` this keeps stdout a single well-formed JSON document (10 §2) rather
+    // than one object per target. A non-zero runtime child exit fails fast and is
+    // forwarded verbatim without emitting a partial aggregate.
+    let mut reports = Vec::new();
+    for name in &targets {
+        match build_one(ctx, name, full_rebuild, pull_policy)? {
+            ImageBuildOutcome::Report(report) => reports.push(report),
+            ImageBuildOutcome::ChildExit(code) => return Ok(code),
+        }
+    }
+
+    if ctx.global.json {
+        #[derive(serde::Serialize)]
+        struct BuildReport {
+            schema_version: u32,
+            images: Vec<crate::services::image_build::ImageBuildReport>,
+        }
+        ctx.ui.json(&BuildReport {
+            schema_version: crate::util::schema_version(),
+            images: reports,
+        })?;
+    } else {
+        for report in &reports {
+            ctx.ui.stdout_line(&format!("image: {}", report.image))?;
+            ctx.ui.stdout_line(&format!("digest: {}", report.digest))?;
+            ctx.ui.stdout_line(if report.reused {
+                "reused: true"
+            } else {
+                "reused: false"
+            })?;
+            // Dry-run conveys the same rebuild/reuse rationale as --json (06 §5).
+            if let Some(reason) = &report.reason {
+                ctx.ui.stdout_line(&format!("reason: {reason}"))?;
+            }
+        }
+    }
+    Ok(crate::exit::SUCCESS)
+}
+
+fn build_one(
+    ctx: &AppContext,
+    name: &str,
+    full_rebuild: bool,
+    pull_policy: Option<PullPolicyArg>,
+) -> Result<ImageBuildOutcome, AppError> {
     let pull_policy = pull_policy
         .map(PullPolicy::from)
         .unwrap_or_else(|| PullPolicy::from_config(&ctx.config.config.images.pull_policy));
-    match ImageBuildService::new(ctx).build(ImageBuildInput {
+    ImageBuildService::new(ctx).build(ImageBuildInput {
         name: name.to_string(),
         full_rebuild,
         pull_policy,
-    })? {
-        ImageBuildOutcome::Report(report) => {
-            if ctx.global.json {
-                ctx.ui.json(&report)?;
-            } else {
-                ctx.ui.stdout_line(&format!("image: {}", report.image))?;
-                ctx.ui.stdout_line(&format!("digest: {}", report.digest))?;
-                ctx.ui.stdout_line(if report.reused {
-                    "reused: true"
-                } else {
-                    "reused: false"
-                })?;
-            }
-            Ok(crate::exit::SUCCESS)
+        dry_run: ctx.global.dry_run,
+    })
+}
+
+fn list(ctx: &AppContext) -> Result<(), AppError> {
+    let names = image_names(ctx)?;
+    if ctx.global.json {
+        #[derive(serde::Serialize)]
+        struct Report {
+            schema_version: u32,
+            images: Vec<String>,
         }
-        ImageBuildOutcome::ChildExit(code) => Ok(code),
+        ctx.ui.json(&Report {
+            schema_version: crate::util::schema_version(),
+            images: names,
+        })
+    } else {
+        for name in names {
+            ctx.ui.stdout_line(&name)?;
+        }
+        Ok(())
     }
 }
 
@@ -61,6 +130,26 @@ fn status(ctx: &AppContext, name: &str) -> Result<(), AppError> {
             message: format!("image `{name}` is not built"),
         }),
     }
+}
+
+fn image_names(ctx: &AppContext) -> Result<Vec<String>, AppError> {
+    let dir = ctx.roots.config.join("images");
+    let mut names = Vec::new();
+    if !dir.exists() {
+        return Ok(names);
+    }
+    for entry in std::fs::read_dir(&dir).map_err(|err| AppError::io(dir.clone(), err))? {
+        let entry = entry
+            .map_err(|err| AppError::unexpected(format!("failed to read images dir: {err}")))?;
+        if !entry.file_type().map(|ty| ty.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        if let Some(name) = entry.file_name().to_str() {
+            names.push(name.to_string());
+        }
+    }
+    names.sort();
+    Ok(names)
 }
 
 fn prune(ctx: &AppContext, yes: bool) -> Result<(), AppError> {
@@ -133,7 +222,8 @@ mod tests {
         let ctx = AppContext::for_test(roots, Arc::new(StubRuntimeAdapter::exiting(injected)));
         let args = ImageArgs {
             command: crate::cli::image::ImageCommand::Build {
-                name: "demo".to_string(),
+                names: vec!["demo".to_string()],
+                all: false,
                 full_rebuild: false,
                 pull_policy: None,
             },
