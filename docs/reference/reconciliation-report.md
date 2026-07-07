@@ -6,6 +6,12 @@
 > table records every touched artifact with its decision, status, and how it was verified. No `git`
 > was run (commits are a separate, explicitly-authorized step).
 
+> **Update (2026-07-07):** this ledger records the spec-authoring phase. The implementation has since
+> landed — the configuration, composition, image-freshness, diagnostics, and lifecycle-**planning**
+> surface is built and tested; the **live guest transport** (interactive shell/exec, live
+> stop-remove, in-guest network enforcement) is deferred. The current per-command reality is tracked
+> in [`implementation-status.md`](implementation-status.md), not here.
+
 ## 1. Podbox spec changes
 
 | Artifact | Decision | Status | Rationale | Verification |

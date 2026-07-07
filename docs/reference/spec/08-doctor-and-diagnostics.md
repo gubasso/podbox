@@ -9,6 +9,10 @@
 > is collected in [`11-invariants-and-guarantees.md`](11-invariants-and-guarantees.md). A section
 > labelled **Reference Evidence** is non-normative.
 
+> Implementation note (non-normative): for which checks are implemented today and why some `fail` by
+> design in the current build — notably `RT-NETBACK`, whose in-guest enforcement rides the deferred
+> live guest transport — see [`../implementation-status.md`](../implementation-status.md).
+
 ## 1. Purpose
 
 `doctor` is a **first-class** command, not an afterthought. It MUST check **all** program requirements
