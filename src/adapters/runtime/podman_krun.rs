@@ -1,10 +1,12 @@
 use std::process::Command;
 
 use super::{
-    BuildImageRequest, DevcontainerRunSpec, HostProbeOutput, RuntimeAdapter, RuntimeError,
-    RuntimeStatus, status_from_std,
+    BuildImageRequest, DevcontainerRunSpec, GuestExecRequest, HostProbeOutput,
+    NetworkPolicyRequest, RuntimeAdapter, RuntimeError, RuntimeStatus, WorkspaceRuntimeSpec,
+    status_from_std,
 };
 use crate::domain::image::PullPolicy;
+use crate::domain::workspace::WorkspaceIdentity;
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct PodmanKrunRuntime;
@@ -41,6 +43,40 @@ impl RuntimeAdapter for PodmanKrunRuntime {
             run_child(self.run_command(spec).into_command())
         }
     }
+
+    fn start_workspace(&self, spec: &WorkspaceRuntimeSpec) -> Result<RuntimeStatus, RuntimeError> {
+        self.run_devcontainer(&spec.devcontainer_spec())
+    }
+
+    fn exec(&self, _request: &GuestExecRequest) -> Result<RuntimeStatus, RuntimeError> {
+        Err(live_transport_unavailable())
+    }
+
+    fn shell(&self, _request: &GuestExecRequest) -> Result<RuntimeStatus, RuntimeError> {
+        Err(live_transport_unavailable())
+    }
+
+    fn stop_workspace(&self, _identity: &WorkspaceIdentity) -> Result<RuntimeStatus, RuntimeError> {
+        Err(live_transport_unavailable())
+    }
+
+    fn remove_workspace(
+        &self,
+        _identity: &WorkspaceIdentity,
+    ) -> Result<RuntimeStatus, RuntimeError> {
+        Err(live_transport_unavailable())
+    }
+
+    fn apply_network_policy(
+        &self,
+        _request: &NetworkPolicyRequest,
+    ) -> Result<RuntimeStatus, RuntimeError> {
+        Err(live_transport_unavailable())
+    }
+}
+
+fn live_transport_unavailable() -> RuntimeError {
+    RuntimeError::Unavailable("live guest transport is not implemented in this round".to_string())
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -153,6 +189,21 @@ pub(super) fn host_runtime_builder_probe() -> Result<HostProbeOutput, std::io::E
         stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
         stdout: String::from_utf8_lossy(&output.stdout).trim().to_string(),
     })
+}
+
+/// Probe whether the runtime backend can enforce the in-guest default-deny
+/// network policy. In-guest enforcement rides the guest transport, which is not
+/// implemented in this round (`apply_network_policy` returns `Unavailable`), so
+/// the backend cannot apply the allowlist in-guest yet. Returns a non-success
+/// result until the microVM guest agent lands and can enforce the policy.
+pub(super) fn host_netback_enforcement_probe() -> HostProbeOutput {
+    HostProbeOutput {
+        status: None,
+        stderr: "in-guest network policy enforcement is unavailable: the guest transport \
+            backend is not implemented in this round"
+            .to_string(),
+        stdout: String::new(),
+    }
 }
 
 #[allow(dead_code)]

@@ -1,0 +1,18 @@
+---
+source: src/adapters/runtime/net_policy.rs
+assertion_line: 94
+expression: artifact.serialize().unwrap()
+---
+{
+  "schema_version": 1,
+  "default_action": "drop",
+  "rules": [
+    {
+      "id": "allow-0001",
+      "action": "allow",
+      "kind": "host",
+      "target": "github.com",
+      "port": 443
+    }
+  ]
+}

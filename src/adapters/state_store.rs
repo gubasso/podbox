@@ -33,12 +33,37 @@ pub(crate) enum StateStoreError {
 pub(crate) trait StateStore: Send + Sync {
     fn read(&self, identity: &WorkspaceIdentity)
     -> Result<Option<WorkspaceState>, StateStoreError>;
+    fn begin_mutation(
+        &self,
+        identity: &WorkspaceIdentity,
+    ) -> Result<Box<dyn StateMutationGuard>, StateStoreError>;
     fn write(&self, state: &WorkspaceState) -> Result<(), StateStoreError>;
+    fn write_locked(
+        &self,
+        state: &WorkspaceState,
+        guard: &dyn StateMutationGuard,
+    ) -> Result<(), StateStoreError>;
     fn mark_failed(
         &self,
         identity: &WorkspaceIdentity,
         reason: String,
     ) -> Result<(), StateStoreError>;
+}
+
+pub(crate) trait StateMutationGuard: Send {
+    fn key(&self) -> &str;
+}
+
+#[derive(Debug)]
+struct FsMutationGuard {
+    key: String,
+    _file: File,
+}
+
+impl StateMutationGuard for FsMutationGuard {
+    fn key(&self) -> &str {
+        &self.key
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -106,23 +131,8 @@ impl FsStateStore {
         record_lock_owner(&file, &path)?;
         Ok(file)
     }
-}
 
-impl StateStore for FsStateStore {
-    fn read(
-        &self,
-        identity: &WorkspaceIdentity,
-    ) -> Result<Option<WorkspaceState>, StateStoreError> {
-        let path = self.path(identity);
-        match fs::read_to_string(&path) {
-            Ok(raw) => serde_json::from_str(&raw).map(Some).map_err(Into::into),
-            Err(source) if source.kind() == ErrorKind::NotFound => Ok(None),
-            Err(source) => Err(StateStoreError::Io { path, source }),
-        }
-    }
-
-    fn write(&self, state: &WorkspaceState) -> Result<(), StateStoreError> {
-        let _lock = self.acquire(&state.identity)?;
+    fn write_inner(&self, state: &WorkspaceState) -> Result<(), StateStoreError> {
         let path = self.path(&state.identity);
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|source| StateStoreError::Io {
@@ -138,6 +148,49 @@ impl StateStore for FsStateStore {
         })?;
         fs::rename(&tmp, &path).map_err(|source| StateStoreError::Io { path, source })
     }
+}
+
+impl StateStore for FsStateStore {
+    fn read(
+        &self,
+        identity: &WorkspaceIdentity,
+    ) -> Result<Option<WorkspaceState>, StateStoreError> {
+        let path = self.path(identity);
+        match fs::read_to_string(&path) {
+            Ok(raw) => serde_json::from_str(&raw).map(Some).map_err(Into::into),
+            Err(source) if source.kind() == ErrorKind::NotFound => Ok(None),
+            Err(source) => Err(StateStoreError::Io { path, source }),
+        }
+    }
+
+    fn begin_mutation(
+        &self,
+        identity: &WorkspaceIdentity,
+    ) -> Result<Box<dyn StateMutationGuard>, StateStoreError> {
+        Ok(Box::new(FsMutationGuard {
+            key: safe_key(identity),
+            _file: self.acquire(identity)?,
+        }))
+    }
+
+    fn write(&self, state: &WorkspaceState) -> Result<(), StateStoreError> {
+        let _lock = self.acquire(&state.identity)?;
+        self.write_inner(state)
+    }
+
+    fn write_locked(
+        &self,
+        state: &WorkspaceState,
+        guard: &dyn StateMutationGuard,
+    ) -> Result<(), StateStoreError> {
+        let key = safe_key(&state.identity);
+        if guard.key() != key {
+            return Err(StateStoreError::OperationInProgress {
+                identity: state.identity.label.0.clone(),
+            });
+        }
+        self.write_inner(state)
+    }
 
     fn mark_failed(
         &self,
@@ -149,6 +202,7 @@ impl StateStore for FsStateStore {
             state: SandboxState::Failed,
             failure: Some(reason),
             image_freshness: None,
+            reconcile_fingerprint: None,
         })
     }
 }
@@ -156,6 +210,17 @@ impl StateStore for FsStateStore {
 #[derive(Clone, Default)]
 pub(crate) struct MemoryStateStore {
     states: Arc<Mutex<BTreeMap<String, WorkspaceState>>>,
+}
+
+#[derive(Debug)]
+struct MemoryMutationGuard {
+    key: String,
+}
+
+impl StateMutationGuard for MemoryMutationGuard {
+    fn key(&self) -> &str {
+        &self.key
+    }
 }
 
 impl StateStore for MemoryStateStore {
@@ -171,12 +236,34 @@ impl StateStore for MemoryStateStore {
             .cloned())
     }
 
+    fn begin_mutation(
+        &self,
+        identity: &WorkspaceIdentity,
+    ) -> Result<Box<dyn StateMutationGuard>, StateStoreError> {
+        Ok(Box::new(MemoryMutationGuard {
+            key: safe_key(identity),
+        }))
+    }
+
     fn write(&self, state: &WorkspaceState) -> Result<(), StateStoreError> {
         self.states
             .lock()
             .expect("state mutex")
             .insert(safe_key(&state.identity), state.clone());
         Ok(())
+    }
+
+    fn write_locked(
+        &self,
+        state: &WorkspaceState,
+        guard: &dyn StateMutationGuard,
+    ) -> Result<(), StateStoreError> {
+        if guard.key() != safe_key(&state.identity) {
+            return Err(StateStoreError::OperationInProgress {
+                identity: state.identity.label.0.clone(),
+            });
+        }
+        self.write(state)
     }
 
     fn mark_failed(
@@ -189,6 +276,7 @@ impl StateStore for MemoryStateStore {
             state: SandboxState::Failed,
             failure: Some(reason),
             image_freshness: None,
+            reconcile_fingerprint: None,
         })
     }
 }
@@ -287,6 +375,7 @@ mod tests {
                 state: SandboxState::Composed,
                 failure: None,
                 image_freshness: None,
+                reconcile_fingerprint: None,
             })
             .unwrap();
 

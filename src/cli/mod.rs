@@ -2,7 +2,10 @@ pub(crate) mod config;
 pub(crate) mod doctor;
 pub(crate) mod image;
 pub(crate) mod manifest;
+pub(crate) mod network;
+pub(crate) mod shell;
 pub(crate) mod version;
+pub(crate) mod workspace;
 
 use std::path::PathBuf;
 
@@ -57,8 +60,11 @@ pub(crate) struct GlobalArgs {
 #[derive(Debug, Subcommand)]
 pub(crate) enum Commands {
     // U1: shell is intentionally reserved as the first help entry in the live round.
+    Shell(shell::ShellArgs),
     Version(version::VersionArgs),
     Doctor(doctor::DoctorArgs),
+    Workspace(workspace::WorkspaceArgs),
+    Network(network::NetworkArgs),
     Config(config::ConfigArgs),
     Manifest(manifest::ManifestArgs),
     Image(image::ImageArgs),

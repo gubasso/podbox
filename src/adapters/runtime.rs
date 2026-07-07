@@ -1,5 +1,6 @@
 pub(crate) mod credentials;
 pub(crate) mod guest_channel;
+pub(crate) mod net_policy;
 mod podman_krun;
 pub(crate) mod stub;
 
@@ -7,9 +8,14 @@ use std::process::Command;
 use std::sync::Arc;
 
 use camino::Utf8PathBuf;
+use serde::Serialize;
 use thiserror::Error;
 
-use crate::{domain::image::PullPolicy, error::AppError};
+use crate::{
+    adapters::runtime::net_policy::NetworkPolicyArtifact,
+    domain::{image::PullPolicy, workspace::WorkspaceIdentity},
+    error::AppError,
+};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct RuntimeStatus {
@@ -39,9 +45,55 @@ pub(crate) struct DevcontainerRunSpec {
     pub(crate) credentials: credentials::CredentialPolicy,
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct WorkspaceRuntimeSpec {
+    pub(crate) identity: WorkspaceIdentity,
+    pub(crate) image: String,
+    pub(crate) workspace: Utf8PathBuf,
+    pub(crate) command: Vec<String>,
+    pub(crate) network_allow: Vec<String>,
+    pub(crate) credentials: credentials::CredentialPolicy,
+}
+
+impl WorkspaceRuntimeSpec {
+    pub(crate) fn devcontainer_spec(&self) -> DevcontainerRunSpec {
+        DevcontainerRunSpec {
+            image: self.image.clone(),
+            workspace: self.workspace.clone(),
+            command: self.command.clone(),
+            network_allow: self.network_allow.clone(),
+            credentials: self.credentials.clone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub(crate) struct GuestExecRequest {
+    pub(crate) identity: WorkspaceIdentity,
+    pub(crate) argv: Vec<String>,
+    pub(crate) login: bool,
+    pub(crate) interactive: bool,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct NetworkPolicyRequest {
+    pub(crate) identity: WorkspaceIdentity,
+    pub(crate) artifact: NetworkPolicyArtifact,
+}
+
 pub(crate) trait RuntimeAdapter: Send + Sync {
     fn build_image(&self, request: &BuildImageRequest) -> Result<RuntimeStatus, RuntimeError>;
     fn run_devcontainer(&self, spec: &DevcontainerRunSpec) -> Result<RuntimeStatus, RuntimeError>;
+    fn start_workspace(&self, spec: &WorkspaceRuntimeSpec) -> Result<RuntimeStatus, RuntimeError>;
+    fn exec(&self, request: &GuestExecRequest) -> Result<RuntimeStatus, RuntimeError>;
+    fn shell(&self, request: &GuestExecRequest) -> Result<RuntimeStatus, RuntimeError>;
+    fn stop_workspace(&self, identity: &WorkspaceIdentity) -> Result<RuntimeStatus, RuntimeError>;
+    fn remove_workspace(&self, identity: &WorkspaceIdentity)
+    -> Result<RuntimeStatus, RuntimeError>;
+    fn apply_network_policy(
+        &self,
+        request: &NetworkPolicyRequest,
+    ) -> Result<RuntimeStatus, RuntimeError>;
 }
 
 pub(crate) fn default_adapter() -> Arc<dyn RuntimeAdapter> {
@@ -71,6 +123,10 @@ pub(crate) fn host_runtime_info_reproduction() -> &'static str {
 
 pub(crate) fn host_runtime_builder_probe() -> Result<HostProbeOutput, std::io::Error> {
     podman_krun::host_runtime_builder_probe()
+}
+
+pub(crate) fn host_netback_enforcement_probe() -> HostProbeOutput {
+    podman_krun::host_netback_enforcement_probe()
 }
 
 #[derive(Debug, Error)]
@@ -110,6 +166,48 @@ impl RuntimeAdapter for UnavailableRuntimeAdapter {
     }
 
     fn run_devcontainer(&self, _spec: &DevcontainerRunSpec) -> Result<RuntimeStatus, RuntimeError> {
+        Err(RuntimeError::Unavailable(
+            "live runtime backend is not implemented in this round".to_string(),
+        ))
+    }
+
+    fn start_workspace(&self, _spec: &WorkspaceRuntimeSpec) -> Result<RuntimeStatus, RuntimeError> {
+        Err(RuntimeError::Unavailable(
+            "live runtime backend is not implemented in this round".to_string(),
+        ))
+    }
+
+    fn exec(&self, _request: &GuestExecRequest) -> Result<RuntimeStatus, RuntimeError> {
+        Err(RuntimeError::Unavailable(
+            "live runtime backend is not implemented in this round".to_string(),
+        ))
+    }
+
+    fn shell(&self, _request: &GuestExecRequest) -> Result<RuntimeStatus, RuntimeError> {
+        Err(RuntimeError::Unavailable(
+            "live runtime backend is not implemented in this round".to_string(),
+        ))
+    }
+
+    fn stop_workspace(&self, _identity: &WorkspaceIdentity) -> Result<RuntimeStatus, RuntimeError> {
+        Err(RuntimeError::Unavailable(
+            "live runtime backend is not implemented in this round".to_string(),
+        ))
+    }
+
+    fn remove_workspace(
+        &self,
+        _identity: &WorkspaceIdentity,
+    ) -> Result<RuntimeStatus, RuntimeError> {
+        Err(RuntimeError::Unavailable(
+            "live runtime backend is not implemented in this round".to_string(),
+        ))
+    }
+
+    fn apply_network_policy(
+        &self,
+        _request: &NetworkPolicyRequest,
+    ) -> Result<RuntimeStatus, RuntimeError> {
         Err(RuntimeError::Unavailable(
             "live runtime backend is not implemented in this round".to_string(),
         ))

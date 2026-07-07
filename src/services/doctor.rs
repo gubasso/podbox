@@ -281,10 +281,21 @@ fn runtime_builder() -> CheckOutcome {
 }
 
 fn runtime_netback_readiness() -> CheckOutcome {
-    CheckOutcome::status(Severity::Pass).with_evidence(concat!(
-        "backend records network allowlist readiness metadata; ",
-        "enforcement is deferred to the network consumer round",
-    ))
+    // A readiness label alone is not enforcement: RT-NETBACK must fail (exit 3)
+    // when the backend cannot actually apply the in-guest default-deny allowlist,
+    // rather than reporting a false pass. The probe reflects real enforcement
+    // capability, which is unavailable until the microVM guest agent lands.
+    let probe = runtime::host_netback_enforcement_probe();
+    if probe.success() {
+        CheckOutcome::status(Severity::Pass)
+            .with_evidence("runtime backend can enforce the in-guest default-deny network policy")
+    } else {
+        CheckOutcome::fail(
+            "RT-NETBACK failed: the runtime backend cannot enforce the in-guest network policy",
+            "Install the podbox microVM backend that applies the default-deny allowlist in-guest",
+        )
+        .with_evidence(format!("netback enforcement probe: {}", probe.stderr))
+    }
 }
 
 #[cfg(unix)]
