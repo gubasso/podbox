@@ -7,7 +7,7 @@ fn image_build_fails_closed_when_live_runtime_is_missing() {
         env.path("config/images/demo/devcontainer.json"),
         r#"{"image":"alpine:latest"}"#,
     );
-    env.cmd()
+    env.cmd_without_runtime()
         .args(["image", "build", "demo"])
         .assert()
         .code(3)

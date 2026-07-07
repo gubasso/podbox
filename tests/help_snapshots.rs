@@ -1,11 +1,11 @@
 mod support;
 
-use support::{TestEnv, stdout_utf8};
+use support::{TestEnv, stdout_utf8, trim_line_endings};
 
 #[test]
 fn root_help_locks_public_command_surface() {
     let env = TestEnv::new();
-    let output = stdout_utf8(env.cmd().arg("--help").assert().success());
+    let output = trim_line_endings(&stdout_utf8(env.cmd().arg("--help").assert().success()));
     assert!(output.contains("shell"));
     assert!(output.contains("init"));
     assert!(output.contains("status"));
@@ -26,7 +26,9 @@ fn root_help_locks_public_command_surface() {
 #[test]
 fn doctor_help_has_reconciled_signature() {
     let env = TestEnv::new();
-    let output = stdout_utf8(env.cmd().args(["doctor", "--help"]).assert().success());
+    let output = trim_line_endings(&stdout_utf8(
+        env.cmd().args(["doctor", "--help"]).assert().success(),
+    ));
     assert!(output.contains("--scope"));
     assert!(output.contains("--json"));
     assert!(output.contains("--quiet"));
